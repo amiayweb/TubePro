@@ -1,0 +1,142 @@
+name: Build and release
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Create the version tag and publish the Chrome/Firefox release
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Validate and build extensions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+      commit: ${{ steps.metadata.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Validate version and requested tag
+        id: metadata
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          import { execFileSync } from 'node:child_process';
+          const { version } = JSON.parse(readFileSync('package.json', 'utf8'));
+          const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
+          if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)
+            || version.split('.').some(part => Number(part) > 65535)) {
+            throw new Error('Use a numeric browser-compatible version such as 1.0.0.');
+          }
+          if (lock.version !== version || lock.packages[''].version !== version) {
+            throw new Error('package.json and package-lock.json versions must match.');
+          }
+          if (process.env.REF_TYPE === 'tag' && process.env.REF_NAME !== `v${version}`) {
+            throw new Error(`Tag must match package.json: v${version}`);
+          }
+          const commit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+          appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\ncommit=${commit}\n`);
+          NODE
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Unit tests
+        run: npm test
+      - name: Build Chrome and Firefox
+        run: npm run build
+      - name: Create checksums
+        env:
+          VERSION: ${{ steps.metadata.outputs.version }}
+        working-directory: dists
+        run: sha256sum "tubepro-chrome-$VERSION.zip" "tubepro-firefox-$VERSION.zip" > SHA256SUMS.txt
+      - name: Upload extension packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: tubepro-${{ steps.metadata.outputs.version }}
+          path: |
+            dists/tubepro-chrome-${{ steps.metadata.outputs.version }}.zip
+            dists/tubepro-firefox-${{ steps.metadata.outputs.version }}.zip
+            dists/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Create tag and GitHub release
+    needs: build
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.publish)
+      || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: tubepro-release
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.build.outputs.version }}
+      COMMIT: ${{ needs.build.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.build.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: tubepro-${{ needs.build.outputs.version }}
+          path: release-assets
+      - name: Verify package checksums
+        working-directory: release-assets
+        run: sha256sum --check SHA256SUMS.txt
+      - name: Create tag without moving existing versions
+        run: |
+          TAG="v$VERSION"
+          if git show-ref --verify --quiet "refs/tags/$TAG"; then
+            EXISTING_COMMIT=$(git rev-parse "refs/tags/$TAG^{commit}")
+            if [ "$EXISTING_COMMIT" != "$COMMIT" ]; then
+              echo "::error::Tag $TAG already points to another commit. It will not be moved. Explicitly choose a new version in package.json and package-lock.json for a new release."
+              exit 1
+            fi
+          else
+            gh api --method POST "repos/$GH_REPO/git/refs" \
+              -f "ref=refs/tags/$TAG" -f "sha=$COMMIT"
+          fi
+      - name: Publish Chrome and Firefox release
+        working-directory: release-assets
+        run: |
+          TAG="v$VERSION"
+          if STATE=$(gh release view "$TAG" --json isDraft --jq '.isDraft' 2>/dev/null); then
+            if [ "$STATE" = "false" ]; then
+              echo "Release $TAG is already published; leaving it unchanged."
+              exit 0
+            fi
+          else
+            gh release create "$TAG" --verify-tag --draft \
+              --title "TubePro $VERSION" --generate-notes
+          fi
+          gh release upload "$TAG" --clobber \
+            "tubepro-chrome-$VERSION.zip" \
+            "tubepro-firefox-$VERSION.zip" SHA256SUMS.txt
+          gh release edit "$TAG" --draft=false

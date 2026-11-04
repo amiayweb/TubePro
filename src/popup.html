@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>TubePro Settings</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <div class="logo">▶</div>
+      <div>
+        <h1>Tube<span>Pro</span></h1>
+        <p>Make room for the video.</p>
+      </div>
+      <span class="version">v0.1</span>
+    </header>
+    <main>
+      <section class="status">
+        <span class="dot"></span>
+        <div>
+          <strong id="status">Independent playback</strong>
+          <p>Original YouTube player always on standby.</p>
+        </div>
+      </section>
+      <label class="setting"
+        ><span
+          ><strong>Enable TubePro</strong
+          ><small>Use the custom player on YouTube.</small></span
+        ><input type="checkbox" id="enabled" role="switch"
+      /></label>
+      <label class="setting"
+        ><span
+          ><strong>SponsorBlock</strong
+          ><small>Skip community-reported sponsor segments.</small></span
+        ><input type="checkbox" id="sponsorBlock" role="switch"
+      /></label>
+      <label class="quality"
+        ><span>Preferred quality</span
+        ><select id="preferredQuality">
+          <option value="auto">Auto · adapt to your connection</option>
+          <option value="720">Up to 720p</option>
+          <option value="1080">Up to 1080p</option>
+          <option value="1440">Up to 1440p</option>
+          <option value="2160">Up to 4K</option>
+          <option value="4320">Up to 8K</option>
+        </select></label
+      >
+      <aside>
+        <span>↪</span>
+        <p>
+          <strong>A soft landing, always.</strong>If independent playback fails,
+          TubePro restores the original player and tells you why. YouTube's
+          normal playback, including ads, then applies.
+        </p>
+      </aside>
+      <p class="privacy">
+        SponsorBlock sends the video ID to sponsor.ajay.app when enabled. No
+        analytics. No proxy servers.
+      </p>
+      <p id="saved" role="status">Settings save automatically.</p>
+    </main>
+    <footer>BUILT FOR THE WATCH.</footer>
+    <script src="popup.js"></script>
+  </body>
+</html>
