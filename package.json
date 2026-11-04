@@ -11,8 +11,8 @@
     "format": "prettier --write src scripts tests *.js *.json *.md",
     "format:check": "prettier --check src scripts tests *.js *.json *.md"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": ["youtube premium","youtube ads","remove youtube ads","free youtube"],
+  "author": "amiayweb",
   "license": "ISC",
   "type": "module",
   "dependencies": {
